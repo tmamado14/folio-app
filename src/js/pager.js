@@ -144,7 +144,7 @@ class PageView {
     el.dataset.side = side;
     el.innerHTML = `
       <div class="page-head"></div>
-      <div class="page-text"><iframe sandbox="allow-same-origin allow-scripts" title="Book page" tabindex="-1"></iframe></div>
+      <div class="page-text"><iframe sandbox="allow-same-origin allow-scripts" title="Book page" tabindex="-1" scrolling="no"></iframe></div>
       <div class="page-foot"></div>
       <div class="page-ribbon" aria-hidden="true"></div>
       <div class="page-gutter"></div>

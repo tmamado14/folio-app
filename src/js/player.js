@@ -2,12 +2,12 @@
 // sleep timer. The Narrator does the reading; this is what you touch.
 
 import { Narrator } from './narrator.js';
-import { $, applyIcons, el, toast } from './ui.js';
+import { $, applyIcons, coverUrl, el, toast } from './ui.js';
 
 const RATES = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 const SLEEP_MINUTES = [0, 15, 30, 60, 90];
 const PREVIEW = 'Hello. This is how I will sound reading your book.';
-const ACCENTS = { 'en-us': 'American', 'en-gb': 'British' };
+const ACCENTS = { 'en-us': 'American', 'en-gb': 'British', system: 'Voices on this device' };
 const GRADE_ORDER = ['A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F+'];
 
 const gradeRank = (g) => {
@@ -15,6 +15,27 @@ const gradeRank = (g) => {
   return i === -1 ? GRADE_ORDER.length : i;
 };
 const megabytes = (bytes) => `${Math.round(bytes / 1e6)} MB`;
+const SYSTEM_VOICE = 'system:';
+
+/** A blink of silence. iPadOS only lets audio start from a tap, then keeps allowing it. */
+function silentClip() {
+  const samples = 2400;
+  const wav = new DataView(new ArrayBuffer(44 + samples));
+  [...'RIFF'].forEach((c, i) => wav.setUint8(i, c.charCodeAt(0)));
+  wav.setUint32(4, 36 + samples, true);
+  [...'WAVEfmt '].forEach((c, i) => wav.setUint8(8 + i, c.charCodeAt(0)));
+  wav.setUint32(16, 16, true);
+  wav.setUint16(20, 1, true);
+  wav.setUint16(22, 1, true);
+  wav.setUint32(24, 24000, true);
+  wav.setUint32(28, 24000, true);
+  wav.setUint16(32, 1, true);
+  wav.setUint16(34, 8, true);
+  [...'data'].forEach((c, i) => wav.setUint8(36 + i, c.charCodeAt(0)));
+  wav.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i += 1) wav.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([wav.buffer], { type: 'audio/wav' }));
+}
 
 export class Player {
   constructor(reader) {
@@ -24,6 +45,7 @@ export class Player {
     this.following = true;
     this.waiting = false;
     this.preview = new Audio();
+    this.audio = new Audio();
     window.folio.tts.onProgress((p) => this.showProgress(p));
   }
 
@@ -51,6 +73,18 @@ export class Player {
     this.reader.setNarrated(null);
   }
 
+  /** Must run directly from a tap, before anything asynchronous. */
+  unlockAudio() {
+    if (window.folio.platform !== 'web' || this.unlocked) return;
+    this.unlocked = true;
+    const clip = silentClip();
+    for (const audio of [this.audio, this.preview]) {
+      audio.src = clip;
+      audio.play().catch(() => {});
+    }
+    window.speechSynthesis?.speak(new SpeechSynthesisUtterance(' '));
+  }
+
   async toggle() {
     if (this.open) this.close();
     else await this.show();
@@ -62,21 +96,33 @@ export class Player {
   }
 
   async show() {
+    this.unlockAudio();
     $('player').hidden = false;
     $('r-listen').classList.add('on');
     const status = await window.folio.tts.status();
-    if (status.installed) await this.begin();
+    if (status.installed || this.settings.voice.startsWith(SYSTEM_VOICE)) await this.begin();
     else this.renderInstall(status);
   }
 
-  renderInstall({ bytes, downloading }) {
+  async useDeviceVoices() {
+    this.voices = await window.folio.tts.voices();
+    this.reader.setOption('voice', this.voices.find((v) => v.id.startsWith(SYSTEM_VOICE)).id);
+    await this.begin();
+  }
+
+  renderInstall({ bytes, downloading, systemVoices, crashed }) {
+    const web = window.folio.platform === 'web';
+    const message = crashed
+      ? 'The natural voice did not finish loading last time, possibly because this device ran short of memory. You can try again or use the voices built into this device.'
+      : `Folio needs to download its voice engine once. After that, everything runs on this ${web ? 'device' : 'PC'}, with no internet and nothing sent anywhere.`;
     const action = el('button', { class: 'btn primary', onclick: () => this.install() }, `Download voices (${megabytes(bytes)})`);
     $('player').replaceChildren(
       el('div', { class: 'install' },
         el('div', {},
           el('strong', {}, 'Listen to your books'),
-          el('p', {}, 'Folio needs to download its voice engine once. After that, everything runs on this PC, with no internet and nothing sent anywhere.')),
+          el('p', {}, message)),
         el('div', { class: 'install-actions', id: 'install-actions' }, action,
+          systemVoices ? el('button', { class: 'btn', onclick: () => this.useDeviceVoices() }, 'Use device voices') : null,
           el('button', { class: 'btn', onclick: () => this.close() }, 'Not now'))));
     if (downloading) this.showProgress({ done: 0, total: bytes });
   }
@@ -93,6 +139,7 @@ export class Player {
     this.showProgress({ done: 0, total: 1 });
     try {
       await window.folio.tts.install();
+      this.voices = null;
       if (this.open) await this.begin();
     } catch (err) {
       toast(`${err.message}. Your download will resume when you try again.`, { error: true });
@@ -110,14 +157,20 @@ export class Player {
       return;
     }
     if (!this.open) return;
+    if (!this.voices.length) {
+      toast('No voices are available on this device', { error: true });
+      this.close();
+      return;
+    }
     this.createNarrator();
     this.renderControls();
     await this.playFromPage();
   }
 
   createNarrator() {
-    const { voice, rate } = this.settings;
-    const n = new Narrator(this.book, { voice, rate });
+    const { rate } = this.settings;
+    const voice = this.voices.some((v) => v.id === this.settings.voice) ? this.settings.voice : this.voices[0].id;
+    const n = new Narrator(this.book, { voice, rate, audio: this.audio });
     n.addEventListener('state', () => this.renderState());
     n.addEventListener('waiting', (e) => { this.waiting = e.detail; this.renderState(); });
     n.addEventListener('sentence', (e) => this.onSentence(e.detail));
@@ -130,7 +183,7 @@ export class Player {
 
   bindMediaKeys() {
     const { mediaSession } = navigator;
-    const cover = this.info.cover ? [{ src: `app://local/cover/${this.info.cover}` }] : [];
+    const cover = this.info.cover ? [{ src: coverUrl(this.info) }] : [];
     mediaSession.metadata = new MediaMetadata({ title: this.info.title, artist: this.info.author, artwork: cover });
     mediaSession.setActionHandler('play', () => this.togglePlay());
     mediaSession.setActionHandler('pause', () => this.togglePlay());
@@ -150,12 +203,14 @@ export class Player {
 
   /** Start reading at a chosen place, opening the player first if needed. */
   async listenFrom(spine, offset) {
+    this.unlockAudio();
     if (!this.narrator) await this.show();
     if (this.narrator) await this.playFrom(spine, offset);
   }
 
   togglePlay() {
     const n = this.narrator;
+    this.unlockAudio();
     if (!n) return;
     if (n.playing) n.pause();
     else if (n.started) n.resume();
@@ -250,17 +305,35 @@ export class Player {
       }),
       el('button', { class: 'voice-choose', onclick: () => this.chooseVoice(v) },
         el('span', { class: 'voice-name' }, v.name),
-        el('span', { class: 'voice-meta' }, `${v.gender}, grade ${v.grade}`)));
+        el('span', { class: 'voice-meta' }, v.meta ?? `${v.gender}, grade ${v.grade}`)));
     const group = (accent) => [
       el('h3', {}, ACCENTS[accent]),
       ...sorted.filter((v) => v.language === accent).map(row),
     ];
-    $('voice-panel').replaceChildren(...group('en-us'), ...group('en-gb'));
+    const groups = Object.keys(ACCENTS).filter((a) => sorted.some((v) => v.language === a)).flatMap(group);
+    const natural = this.voices.some((v) => !v.id.startsWith(SYSTEM_VOICE));
+    const upgrade = natural ? null : el('button', {
+      class: 'btn voice-upgrade',
+      onclick: () => {
+        this.reader.setOption('voice', 'af_heart');
+        this.close();
+        this.show();
+      },
+    }, 'Get natural voices');
+    $('voice-panel').replaceChildren(...groups, ...(upgrade ? [upgrade] : []));
     applyIcons($('voice-panel'));
   }
 
   async tryVoice(voice, button) {
     if (this.narrator?.playing) this.narrator.pause();
+    if (voice.id.startsWith(SYSTEM_VOICE)) {
+      const line = new SpeechSynthesisUtterance(PREVIEW);
+      const uri = voice.id.slice(SYSTEM_VOICE.length);
+      line.voice = speechSynthesis.getVoices().find((v) => v.voiceURI === uri) ?? null;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(line);
+      return;
+    }
     button.classList.add('busy');
     try {
       const wav = await window.folio.tts.synth(PREVIEW, voice.id);

@@ -1,6 +1,6 @@
 # Folio
 
-A desktop EPUB reader for Windows. Your books stand on a wooden bookcase; opening one gives you a real
+An EPUB reader for Windows and the web. Your books stand on a wooden bookcase; opening one gives you a real
 two-page book with pages you can turn.
 
 ## Run it
@@ -13,13 +13,22 @@ npm start
 To build a standalone app (no Node needed afterwards), run `npm run package`, then open
 `dist\Folio-win32-x64\Folio.exe`.
 
+## On iPad and the web
+
+Folio also runs as a website, hosted free on GitHub Pages from the `docs/` folder. It works offline once
+loaded. On an iPad, open the site in Safari, tap Share, then Add to Home Screen, and use it from there. Books
+stay in that device's browser storage and are never uploaded, so add them on each device and keep your
+originals in Files. Libraries and reading progress are separate from the desktop app.
+
+To change the site, edit `src/` or `web/`, run `npm run build:web`, and commit the rebuilt `docs/`.
+
 ## Reading
 
 | Action | How |
 | --- | --- |
-| Turn a page | Arrow keys, Space, Page Up/Down, mouse wheel, or click a page (right page forward, left page back) |
+| Turn a page | Arrow keys, Space, Page Up/Down, mouse wheel, or click a page (right page forward, left page back). On a touchscreen, swipe or tap the sides |
 | Turn by hand | Drag from the outer edge of a page |
-| Show the toolbar and progress bar | Move the mouse to the top or bottom of the window |
+| Show the toolbar and progress bar | Move the mouse to the top or bottom of the window, or tap the middle of the page |
 | Contents, bookmarks, highlights | Press `C` |
 | Search the book | `Ctrl+F` |
 | Bookmark the page | `B` |
@@ -41,6 +50,9 @@ reads. If you page away, the voice carries on, and Find my place brings you back
 The voice model (326 MB) downloads once, the first time you listen, and goes in `%APPDATA%\Folio\voices`.
 Nothing leaves your computer. An interrupted download resumes where it stopped.
 
+On the web the same model runs in the browser, on the GPU where possible, and is stored by the browser. If it
+can't run on a device, Folio offers that device's built-in voices instead.
+
 ## Where your data lives
 
 `%APPDATA%\Folio\library` holds a copy of each book, its cover, and `library.json` with your progress,
@@ -59,10 +71,13 @@ notes and collections. Removing a book from Folio never touches your original fi
   the check that every clip is real sound before it plays.
 - `src/js/sentences.js`, `narrator.js`, `player.js`: finding sentences on the page, reading them in order
   with a few synthesized ahead, and the listening controls.
+- `web/`: the browser's version of the `window.folio` interface (storage, book import, voices), which is
+  all that differs from the desktop app, plus offline support. `scripts/build-web.js` builds it into `docs/`.
 
 ## Tests
 
-`npm test` runs the parser unit tests, then drives the real app end to end. The end-to-end run needs an
-`.epub` in the project folder and uses a temporary library, so yours isn't touched.
+`npm test` runs the unit tests, drives the real desktop app end to end, then tests the built website in
+WebKit, Safari's engine, emulating an iPad. The end-to-end runs need an `.epub` in the project folder and use
+a temporary library, so yours isn't touched. The WebKit run needs `npx playwright-core install webkit` once.
 
 DRM-protected books can't be opened, and Folio says so when you try to add one.

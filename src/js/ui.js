@@ -59,4 +59,6 @@ export function formatSize(bytes) {
   return bytes > 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.round(bytes / 1e3)} KB`;
 }
 
+export const coverUrl = (book) => book.coverUrl ?? `${location.origin}/cover/${book.cover}`;
+
 export const uid = () => Math.random().toString(36).slice(2, 10);

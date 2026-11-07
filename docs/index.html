@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' blob: data: https://huggingface.co https://*.huggingface.co https://*.hf.co; frame-src 'self'; manifest-src 'self'; base-uri 'self'">
+  <meta name="theme-color" content="#1c1410">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Folio">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/web.css">
+  <script src="js/folio-web.js"></script>
+  <title>Folio</title>
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/shelf.css">
+  <link rel="stylesheet" href="css/reader.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div id="shelf-view" class="view">
+    <header class="shelf-top">
+      <div class="wordmark">Folio</div>
+      <nav class="shelf-tabs" id="shelf-tabs" aria-label="Collections"></nav>
+      <div class="shelf-tools">
+        <input id="shelf-search" class="shelf-search" type="search" placeholder="Search your books" aria-label="Search your books">
+        <select id="shelf-sort" class="shelf-sort" aria-label="Sort books">
+          <option value="recent">Recently read</option>
+          <option value="added">Recently added</option>
+          <option value="title">Title</option>
+          <option value="author">Author</option>
+          <option value="progress">Progress</option>
+        </select>
+        <button id="add-books" class="btn primary">Add books</button>
+        <button id="add-folder" class="btn">Add folder</button>
+      </div>
+    </header>
+    <main class="bookcase" id="bookcase"></main>
+    <div class="drop-veil" id="drop-veil"><div>Drop to add to your shelves</div></div>
+  </div>
+
+  <div id="reader-view" class="view" hidden>
+    <div class="stage" id="stage">
+      <div class="book" id="book">
+        <div class="board"></div>
+        <div class="edges left"></div>
+        <div class="edges right"></div>
+        <div class="leaves" id="leaves"></div>
+        <div class="turn-zone prev" id="zone-prev"></div>
+        <div class="turn-zone next" id="zone-next"></div>
+      </div>
+    </div>
+
+    <header class="reader-top" id="reader-top">
+      <button class="ico" id="r-back" title="Back to shelf (Esc)" data-ico="back"></button>
+      <div class="reader-title" id="r-title"></div>
+      <div class="reader-tools">
+        <button class="ico" id="r-contents" title="Contents and notes (C)" data-ico="list"></button>
+        <button class="ico" id="r-search" title="Search this book (Ctrl+F)" data-ico="search"></button>
+        <button class="ico" id="r-listen" title="Read aloud (P)" data-ico="headphones"></button>
+        <button class="ico" id="r-mark" title="Bookmark this page (B)" data-ico="bookmark"></button>
+        <button class="ico" id="r-type" title="Reading settings" data-ico="type"></button>
+        <button class="ico" id="r-full" title="Full screen (F11)" data-ico="expand"></button>
+      </div>
+    </header>
+
+    <footer class="reader-bottom" id="reader-bottom">
+      <input type="range" id="r-scrub" min="0" max="1000" value="0" aria-label="Position in book">
+      <div class="scrub-tip" id="r-tip"></div>
+      <div class="scrub-info" id="r-info"></div>
+    </footer>
+
+    <button class="return-pill" id="r-return" hidden></button>
+
+    <aside class="drawer" id="drawer" aria-label="Book navigation">
+      <div class="drawer-tabs" id="drawer-tabs">
+        <button data-tab="contents">Contents</button>
+        <button data-tab="bookmarks">Bookmarks</button>
+        <button data-tab="highlights">Highlights</button>
+        <button data-tab="search">Search</button>
+      </div>
+      <div class="drawer-search" id="drawer-search" hidden>
+        <input id="book-search" type="search" placeholder="Find in this book" aria-label="Find in this book">
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+
+    <section class="type-panel" id="type-panel" hidden aria-label="Reading settings"></section>
+    <section class="player" id="player" hidden aria-label="Read aloud"></section>
+    <section class="voice-panel" id="voice-panel" hidden aria-label="Voices"></section>
+    <div class="sel-pop" id="sel-pop" hidden></div>
+    <iframe class="measure" id="measure" sandbox="allow-same-origin" title="" tabindex="-1" aria-hidden="true"></iframe>
+  </div>
+
+  <div class="cover-flight" id="cover-flight" hidden></div>
+  <div class="scrim" id="modal" hidden></div>
+  <div class="toasts" id="toasts" role="status"></div>
+</body>
+</html>

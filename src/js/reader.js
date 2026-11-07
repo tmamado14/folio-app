@@ -39,6 +39,14 @@ const SAVE_DELAY_MS = 700;
 const RETURN_PILL_MS = 20000;
 const SEARCH_FLASH_MS = 2500;
 const SINGLE_PAGE_BACK_ZONE = 0.35;
+const TOUCH = matchMedia('(hover: none)').matches;
+const SWIPE_PX = 44;
+const TAP_SLOP_PX = 10;
+const TAP_MS = 350;
+const SWIPE_MS = 700;
+const TOUCH_EDGE_ZONE = 0.3;
+const SELECTION_SETTLE_MS = 450;
+const AFTER_TOUCH_MS = 900;
 
 export class Reader {
   constructor({ onClose }) {
@@ -79,7 +87,17 @@ export class Reader {
     this.bindZone($('zone-next'), 1);
     this.bindZone($('zone-prev'), -1);
 
-    $('stage').addEventListener('pointerdown', () => this.closePanels());
+    $('stage').addEventListener('pointerdown', (e) => {
+      this.pressWasDismissal = this.panelsOpen();
+      this.closePanels();
+    });
+    // A blank page has no text frame to catch the press, so the book itself does.
+    $('leaves').addEventListener('click', (e) => {
+      // Safari can send a touch to the page frame but its click here. Acting on both
+      // would turn the toolbar on and straight back off.
+      const justTouched = performance.now() - (this.lastTouch ?? -Infinity) < AFTER_TOUCH_MS;
+      if (!this.pressWasDismissal && !justTouched) this.pressAt(e.clientX);
+    });
     $('reader-view').addEventListener('mousemove', (e) => this.chromeNear(e.clientY));
     $('stage').addEventListener('wheel', (e) => this.onWheel(e), { passive: true });
     document.addEventListener('keydown', (e) => this.onKey(e));
@@ -136,6 +154,7 @@ export class Reader {
     const { pager } = this;
     this.pager = null;
     pager.close();
+    this.book.dispose();
     this.book = null;
     await this.onClose();
   }
@@ -430,6 +449,73 @@ export class Reader {
     doc.addEventListener('mouseup', (e) => setTimeout(() => this.onMouseUp(view, e), 0));
     doc.addEventListener('click', (e) => this.onDocClick(view, e));
     doc.addEventListener('mousemove', (e) => this.chromeNear(view.frame.getBoundingClientRect().top + e.clientY));
+    if (TOUCH) this.bindTouch(view);
+  }
+
+  /** Swipes turn pages; tap the sides to turn or the middle for the toolbar. */
+  bindTouch(view) {
+    const { doc } = view;
+    let start = null;
+    doc.addEventListener('touchstart', (e) => {
+      start = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, at: performance.now() } : null;
+    }, { passive: true });
+    doc.addEventListener('touchend', (e) => {
+      this.lastTouch = performance.now();
+      if (!start) return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      const elapsed = this.lastTouch - start.at;
+      start = null;
+      if (!doc.getSelection().isCollapsed) return;
+      if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 2 && elapsed < SWIPE_MS) {
+        this.closePanels();
+        this.turn(dx < 0 ? 1 : -1);
+      } else if (Math.hypot(dx, dy) < TAP_SLOP_PX && elapsed < TAP_MS) {
+        this.onTap(view, touch, e.target);
+      }
+    }, { passive: true });
+    // iPadOS selects text by pressing and holding, with no mouse-up to listen for.
+    doc.addEventListener('selectionchange', () => {
+      clearTimeout(this.selectionTimer);
+      this.selectionTimer = setTimeout(() => {
+        const sel = doc.getSelection();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) this.showSelectionPop(view, sel.getRangeAt(0).cloneRange());
+      }, SELECTION_SETTLE_MS);
+    });
+  }
+
+  onTap(view, touch, target) {
+    if (target.closest?.('a[href]')) return;
+    if (this.panelsOpen()) {
+      this.closePanels();
+      return;
+    }
+    const caret = view.doc.caretRangeFromPoint(touch.clientX, touch.clientY);
+    if (caret) {
+      const at = this.offsetsOf(view, caret).start;
+      const hit = this.info.highlights.find((h) => h.spine === view.spine && at >= h.start && at < h.end);
+      if (hit) {
+        this.showHighlightPop(view, hit, caret.getBoundingClientRect());
+        return;
+      }
+    }
+    this.pressAt(view.frame.getBoundingClientRect().left + touch.clientX);
+  }
+
+  /** Acts on a press at a screen position: turn at the sides, toolbar in the middle. */
+  pressAt(clientX) {
+    const book = $('book').getBoundingClientRect();
+    const position = (clientX - book.left) / book.width;
+    if (!TOUCH) this.turn(position < 0.5 ? -1 : 1);
+    else if (position < TOUCH_EDGE_ZONE) this.turn(-1);
+    else if (position > 1 - TOUCH_EDGE_ZONE) this.turn(1);
+    else this.toggleChrome();
+  }
+
+  toggleChrome() {
+    if ($('reader-view').classList.contains('chrome')) $('reader-view').classList.remove('chrome');
+    else this.showChrome();
   }
 
   onDocClick(view, e) {
@@ -446,6 +532,8 @@ export class Reader {
   }
 
   onMouseUp(view, e) {
+    // A tap also fires mouse events; bindTouch has already dealt with it.
+    if (TOUCH && performance.now() - (this.lastTouch ?? -Infinity) < AFTER_TOUCH_MS) return;
     const sel = view.doc.getSelection();
     if (sel && !sel.isCollapsed && sel.toString().trim()) {
       this.showSelectionPop(view, sel.getRangeAt(0).cloneRange());

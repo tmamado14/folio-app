@@ -1,0 +1,100 @@
+/* Loaded last inside every chapter frame. It tames publisher CSS just enough to
+   flow into page-sized columns; the frame's variables come from pager.js. */
+
+@font-face { font-family: 'Literata'; font-style: normal; font-weight: 200 900; font-display: block;
+  src: url(../fonts/literata-latin-wght-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Literata'; font-style: italic; font-weight: 200 900; font-display: block;
+  src: url(../fonts/literata-latin-wght-italic.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Literata'; font-style: normal; font-weight: 200 900; font-display: block;
+  src: url(../fonts/literata-latin-ext-wght-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Literata'; font-style: italic; font-weight: 200 900; font-display: block;
+  src: url(../fonts/literata-latin-ext-wght-italic.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: var(--w) !important;
+  height: var(--h) !important;
+  max-width: none !important;
+  overflow: clip !important;
+  background: transparent !important;
+  font-size: var(--size) !important;
+}
+
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: var(--w) !important;
+  height: var(--h) !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+  background: transparent !important;
+  color: var(--ink) !important;
+  column-width: var(--w) !important;
+  column-count: auto !important;
+  column-gap: var(--gap) !important;
+  column-fill: auto !important;
+  transform: translateX(var(--x, 0px));
+  orphans: 2;
+  widows: 2;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  cursor: text;
+}
+
+html[data-font] :is(body, p, div, span, li, ol, ul, dl, dd, dt, blockquote, table, td, th, a, em, i, b, strong, cite, small, h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font) !important;
+}
+
+:is(p, li, blockquote, div, dd, dt, td) { line-height: var(--lh) !important; }
+
+html[data-justify='1'] [data-aligned] { text-align: justify !important; }
+html[data-justify='0'] [data-aligned] { text-align: left !important; }
+
+html[data-dark='1'] body * {
+  color: inherit !important;
+  background-color: transparent !important;
+  border-color: color-mix(in srgb, var(--ink) 35%, transparent) !important;
+}
+html[data-dark='1'] a { color: var(--link) !important; }
+html[data-dark='1'] img { filter: brightness(0.88); }
+
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; cursor: pointer; }
+
+img, svg, video {
+  max-width: 100% !important;
+  max-height: var(--h) !important;
+  object-fit: contain;
+  break-inside: avoid;
+}
+img { height: auto !important; }
+/* An indent on a picture's paragraph would push it past the column edge. */
+:is(p, div):has(> img) { text-indent: 0 !important; }
+table, pre { max-width: 100%; }
+pre { white-space: pre-wrap; }
+:is(h1, h2, h3, h4, h5, h6) { break-after: avoid; break-inside: avoid; }
+
+/* A chapter that is only a picture (cover, map, plate) fills its page. */
+html[data-plate='1'] body { display: flex; align-items: center; justify-content: center; column-width: auto !important; }
+html[data-plate='1'] body * { margin: 0 !important; padding: 0 !important; max-height: var(--h) !important; }
+html[data-plate='1'] img, html[data-plate='1'] svg { width: auto !important; height: auto !important; max-height: var(--h) !important; }
+html[data-plate='1'] svg { width: var(--w) !important; height: var(--h) !important; }
+html[data-fill] img { width: var(--w) !important; height: var(--h) !important; max-width: none !important; object-fit: contain; }
+
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+::highlight(folio-yellow) { background-color: rgba(250, 214, 92, 0.55); }
+::highlight(folio-green) { background-color: rgba(152, 214, 137, 0.5); }
+::highlight(folio-blue) { background-color: rgba(136, 193, 240, 0.5); }
+::highlight(folio-pink) { background-color: rgba(244, 164, 190, 0.55); }
+::highlight(folio-flash) { background-color: rgba(255, 150, 40, 0.6); }
+::highlight(folio-tts) { background-color: rgba(120, 165, 205, 0.32); }
+html[data-dark='1'] *::highlight(folio-yellow) { color: #1a1408; }

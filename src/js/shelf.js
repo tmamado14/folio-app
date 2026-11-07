@@ -1,7 +1,7 @@
 // The bookcase: books stand face-out on wooden shelves, each with a brass label
 // on the shelf edge showing its title and how far you've read.
 
-import { $, el, formatDate, formatSize, reportImport, toast, uid } from './ui.js';
+import { $, coverUrl, el, formatDate, formatSize, reportImport, toast, uid } from './ui.js';
 
 const TIER_HEIGHT = 348;
 const CELL_WIDTH = 214;
@@ -68,7 +68,7 @@ export class Shelf {
       e.preventDefault();
       depth = 0;
       veil.classList.remove('on');
-      const paths = [...e.dataTransfer.files].map((f) => window.folio.pathForFile(f)).filter((p) => /\.epub$/i.test(p));
+      const paths = [...e.dataTransfer.files].filter((f) => /\.epub$/i.test(f.name)).map((f) => window.folio.pathForFile(f));
       if (!paths.length) {
         toast('Only .epub files can be added', { error: true });
         return;
@@ -146,7 +146,7 @@ export class Shelf {
 
   coverEl(book) {
     if (book.cover) {
-      const img = el('img', { src: `app://local/cover/${book.cover}`, alt: '', draggable: false });
+      const img = el('img', { src: coverUrl(book), alt: '', draggable: false });
       img.addEventListener('error', () => img.replaceWith(this.plainCover(book)), { once: true });
       return img;
     }

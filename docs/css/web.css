@@ -1,0 +1,36 @@
+/* Differences for the browser and iPad: no desktop title bar, no folder picker,
+   and room for the iPad's home indicator. */
+
+html.web, html.web body {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Safari draws its own light control, leaving this theme's pale text unreadable. */
+html.web select { -webkit-appearance: none; appearance: none; }
+html.web .shelf-sort { padding: 0 12px; background: rgba(20, 12, 7, 0.45); color: var(--cream); }
+html.web .field { padding: 0 12px; }
+
+/* iPadOS zooms the whole page when a smaller text field takes focus. */
+html.web input, html.web textarea { font-size: 16px; }
+
+/* Removes the pause browsers leave after a tap while waiting for a double-tap. */
+html.web .stage { touch-action: manipulation; }
+
+html.web .shelf-top { padding-right: 30px; }
+html.web #add-folder { display: none; }
+html.web .reader-top { padding-right: 6px; }
+html.web .reader-bottom { padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+html.web .player { bottom: calc(16px + env(safe-area-inset-bottom)); }
+html.web #reader-view.chrome .player { bottom: calc(70px + env(safe-area-inset-bottom)); }
+
+@media (hover: none) {
+  /* Fingers need larger targets than a mouse, and there is no hover to reveal them. */
+  html.web .ico { width: 42px; height: 38px; }
+  html.web .swatch { width: 30px; height: 30px; }
+  html.web .pop-btn { padding: 7px 11px; }
+  html.web .note-del { opacity: 1; }
+  html.web .turn-zone::after { display: none; }
+  html.web .book-item:hover .book-body { transform: rotateY(21deg); }
+}

@@ -103,6 +103,7 @@
   will-change: transform;
 }
 .page.on { visibility: visible; }
+.page.blank { cursor: pointer; }
 .page[data-side='left'] {
   left: 0;
   transform-origin: right center;
@@ -115,7 +116,7 @@
 }
 .book.single .page[data-side='right'] { left: 0; }
 
-.page-text { position: absolute; top: var(--pad-top); bottom: var(--pad-bottom); }
+.page-text { position: absolute; top: var(--pad-top); bottom: var(--pad-bottom); overflow: hidden; }
 .page[data-side='left'] .page-text { left: var(--pad-outer); right: var(--pad-inner); }
 .page[data-side='right'] .page-text { left: var(--pad-inner); right: var(--pad-outer); }
 .page.plate[data-side] .page-text { inset: 0; }
@@ -490,6 +491,7 @@
   scrollbar-width: thin;
 }
 #reader-view.chrome .voice-panel { bottom: 138px; }
+.voice-upgrade { display: block; width: calc(100% - 16px); margin: 12px 8px 4px; }
 .voice-panel h3 { margin: 12px 8px 4px; font-size: 12px; font-weight: 600; color: var(--ui-dim); }
 .voice-row { display: flex; align-items: center; gap: 2px; border-radius: 8px; }
 .voice-row:hover { background: var(--ui-line); }

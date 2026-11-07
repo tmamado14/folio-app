@@ -2,12 +2,13 @@
 // ahead of the listener so speech is continuous even though each is generated
 // on demand. Reports each sentence as it starts so the page can follow along.
 
+const SYSTEM_VOICE = 'system:';
 const LOOKAHEAD = 4;
 const PARAGRAPH_PAUSE_MS = 240;
 const CHAPTER_PAUSE_MS = 900;
 
 export class Narrator extends EventTarget {
-  constructor(book, { voice, rate }) {
+  constructor(book, { voice, rate, audio }) {
     super();
     this.book = book;
     this.voice = voice;
@@ -16,7 +17,7 @@ export class Narrator extends EventTarget {
     this.run = 0;
     this.playing = false;
     this.clips = new Map();
-    this.audio = new Audio();
+    this.audio = audio;
     this.audio.preservesPitch = true;
     this.sentenceCache = new Map();
   }
@@ -65,7 +66,34 @@ export class Narrator extends EventTarget {
     return this.clips.get(key);
   }
 
+  get usesSystemVoice() {
+    return this.voice.startsWith(SYSTEM_VOICE);
+  }
+
+  /** Speaks through the device's own voices. Resolves false if interrupted. */
+  speak(text, run) {
+    return new Promise((resolve, reject) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const uri = this.voice.slice(SYSTEM_VOICE.length);
+      utterance.voice = speechSynthesis.getVoices().find((v) => v.voiceURI === uri) ?? null;
+      utterance.rate = this.rate;
+      const done = (result) => {
+        this.finishClip = null;
+        resolve(result);
+      };
+      utterance.onend = () => done(run === this.run);
+      utterance.onerror = (e) => {
+        if (run === this.run && !/cancel|interrupt/.test(e.error)) reject(new Error('The device voice stopped working'));
+        else done(false);
+      };
+      this.utterance = utterance;
+      this.finishClip = () => done(false);
+      speechSynthesis.speak(utterance);
+    });
+  }
+
   async prefetch(from) {
+    if (this.usesSystemVoice) return;
     let at = { spine: from.spine, i: from.i + 1 };
     for (let n = 0; n < LOOKAHEAD; n += 1) {
       const item = await this.settle(at);
@@ -125,14 +153,21 @@ export class Narrator extends EventTarget {
         this.cursor = { spine: item.spine, i: item.i };
         this.prefetch(item);
 
-        this.emit('waiting', true);
-        const url = await this.clipFor(item);
-        if (run !== this.run) return;
-        this.emit('waiting', false);
-        this.emit('sentence', { spine: item.spine, ...item.sentence });
-
-        const finished = await this.playClip(url, run);
-        this.dropClip(this.clipKey(item));
+        let finished;
+        if (this.usesSystemVoice) {
+          await this.whilePaused(run);
+          if (run !== this.run) return;
+          this.emit('sentence', { spine: item.spine, ...item.sentence });
+          finished = await this.speak(item.sentence.text, run);
+        } else {
+          this.emit('waiting', true);
+          const url = await this.clipFor(item);
+          if (run !== this.run) return;
+          this.emit('waiting', false);
+          this.emit('sentence', { spine: item.spine, ...item.sentence });
+          finished = await this.playClip(url, run);
+          this.dropClip(this.clipKey(item));
+        }
         if (!finished) return;
 
         const next = item.list[item.i + 1];
@@ -159,6 +194,7 @@ export class Narrator extends EventTarget {
   /** Starts over from a cursor, dropping whatever was playing or queued. */
   restart(cursor) {
     this.run += 1;
+    window.speechSynthesis?.cancel();
     this.finishClip?.();
     this.resumePause?.();
     this.resumePause = null;
@@ -184,12 +220,14 @@ export class Narrator extends EventTarget {
   pause() {
     this.playing = false;
     this.audio.pause();
+    if (this.usesSystemVoice) speechSynthesis.pause();
     this.emit('state');
   }
 
   resume() {
     this.playing = true;
-    if (this.audio.src && !this.audio.ended) this.audio.play().catch(() => {});
+    if (this.usesSystemVoice) speechSynthesis.resume();
+    else if (this.audio.src && !this.audio.ended) this.audio.play().catch(() => {});
     this.resumePause?.();
     this.resumePause = null;
     this.emit('state');
@@ -217,6 +255,7 @@ export class Narrator extends EventTarget {
   stop() {
     this.run += 1;
     this.playing = false;
+    window.speechSynthesis?.cancel();
     this.finishClip?.();
     this.resumePause?.();
     this.audio.pause();

@@ -8,7 +8,7 @@ const ENGLISH_VOICE = /^[ab][fm]_/;
 
 const IGNORE = [
   /\.epub$/i,
-  /^\/(test|dist|scripts)($|\/)/,
+  /^\/(test|dist|scripts|docs|web)($|\/)/,
   /^\/README\.md$/,
   // The voice engine runs natively on Windows; other platforms and the browser
   // build would add about 250 MB that nothing here loads.

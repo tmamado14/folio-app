@@ -3,8 +3,8 @@
 
 import { splitSentences } from './sentences.js';
 
-const ORIGIN = 'app://local';
-const PAGE_CSS = `${ORIGIN}/css/page.css`;
+const ORIGIN = location.origin;
+const PAGE_CSS = new URL('css/page.css', document.baseURI).href;
 const REMOVED = 'script, iframe, object, embed, frame, frameset, applet, meta, base, title, form, input, button';
 
 const encodePath = (p) => p.split('/').map(encodeURIComponent).join('/');
@@ -78,6 +78,7 @@ export class Book {
     this.tocSource = manifest.toc;
     this.toc = [];
     this.chapters = new Map();
+    this.assets = new Map();
     this.spineByPath = new Map(this.spine.map((s, i) => [s.path, i]));
   }
 
@@ -94,9 +95,81 @@ export class Book {
   }
 
   async fetchText(path) {
+    const { read } = window.folio.book;
+    if (read) {
+      const blob = await read(this.id, path);
+      if (!blob) throw new Error(`Missing file in book: ${path}`);
+      return decodeBytes(await blob.arrayBuffer());
+    }
     const res = await fetch(this.fileUrl(path));
     if (!res.ok) throw new Error(`Missing file in book: ${path}`);
     return decodeBytes(await res.arrayBuffer());
+  }
+
+  pathOf(url) {
+    const prefix = `${ORIGIN}/book/${this.id}/`;
+    return url.startsWith(prefix) ? decodeURIComponent(new URL(url).pathname).slice(`/book/${this.id}/`.length) : null;
+  }
+
+  assetUrl(path) {
+    if (!this.assets.has(path)) {
+      this.assets.set(path, window.folio.book.read(this.id, path).then((blob) => (blob ? URL.createObjectURL(blob) : null)));
+    }
+    return this.assets.get(path);
+  }
+
+  /** Points a reference at this book's own file, or null if it leaves the book. */
+  async embedRef(ref, base) {
+    if (!ref || /^(data|blob):/i.test(ref)) return ref;
+    const path = this.pathOf(new URL(ref, base).href);
+    return path ? this.assetUrl(path) : null;
+  }
+
+  async embedCss(css, path) {
+    const base = this.fileUrl(path);
+    const refs = [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g)];
+    const urls = await Promise.all(refs.map((m) => this.embedRef(m[2], base)));
+    let i = 0;
+    return css.replace(/@import[^;]+;/g, '').replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, () => {
+      const url = urls[i];
+      i += 1;
+      return url ? `url("${url}")` : 'none';
+    });
+  }
+
+  /**
+   * On the web there is no server for files inside a book, so a chapter's images,
+   * styles and fonts become blob: URLs. That also means no book file has an address
+   * on the site, so the content policy can treat every book as untrusted.
+   */
+  async embedAssets(doc, path) {
+    const base = this.fileUrl(path);
+    const swap = async (el, attr) => {
+      const url = await this.embedRef(el.getAttribute(attr), base);
+      if (url) el.setAttribute(attr, url);
+      else el.removeAttribute(attr);
+    };
+    const jobs = [...doc.querySelectorAll('img[src]')].map((el) => swap(el, 'src'));
+    for (const el of doc.querySelectorAll('image')) {
+      for (const attr of ['href', 'xlink:href']) if (el.hasAttribute(attr)) jobs.push(swap(el, attr));
+    }
+    for (const style of doc.querySelectorAll('style')) {
+      jobs.push(this.embedCss(style.textContent, path).then((css) => { style.textContent = css; }));
+    }
+    for (const link of doc.querySelectorAll('link[href]')) {
+      const cssPath = this.pathOf(new URL(link.getAttribute('href'), base).href);
+      jobs.push((async () => {
+        const style = doc.createElement('style');
+        style.textContent = cssPath ? await this.embedCss(await this.fetchText(cssPath), cssPath) : '';
+        link.replaceWith(style);
+      })().catch(() => link.remove()));
+    }
+    await Promise.all(jobs);
+  }
+
+  dispose() {
+    for (const asset of this.assets.values()) asset.then((url) => url && URL.revokeObjectURL(url), () => {});
+    this.assets.clear();
   }
 
   /** Maps any URL inside this book to a spine index and fragment. */
@@ -201,6 +274,8 @@ export class Book {
       const docLang = src.documentElement.getAttribute('lang') ?? src.documentElement.getAttribute('xml:lang');
       out.documentElement.setAttribute('lang', docLang || lang);
     }
+
+    if (window.folio.book.read) await this.embedAssets(out, item.path);
 
     const base = out.createElement('base');
     base.href = url;
