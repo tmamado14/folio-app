@@ -50,8 +50,10 @@ reads. If you page away, the voice carries on, and Find my place brings you back
 The voice model (326 MB) downloads once, the first time you listen, and goes in `%APPDATA%\Folio\voices`.
 Nothing leaves your computer. An interrupted download resumes where it stopped.
 
-On the web the same model runs in the browser, on the GPU where possible, and is stored by the browser. If it
-can't run on a device, Folio offers that device's built-in voices instead.
+On the web the same model runs in the browser and is stored there. It uses the GPU where that is reliable and
+the CPU on Safari, where the GPU path can run out of memory. The offline service worker adds the headers that
+let it use several CPU cores, which GitHub Pages can't send. If the voice can't run on a device, or takes too
+long to start, Folio offers that device's built-in voices instead.
 
 ## Where your data lives
 

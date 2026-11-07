@@ -1,6 +1,6 @@
-// Runs the neural voice off the main thread. Prefers the GPU, and proves the audio
-// is real before trusting a device: some model and hardware pairings return invalid
-// numbers, which would otherwise play as silence.
+// Runs the neural voice off the main thread, on the device the page asks for, and
+// proves the audio is real before trusting it: some model and hardware pairings
+// return invalid numbers, which would otherwise play as silence.
 
 import { KokoroTTS, env } from '../node_modules/kokoro-js/dist/kokoro.web.js';
 import { isSpeech, toWav } from '../main/tts-audio.js';
@@ -19,30 +19,21 @@ let working = false;
 function reportDownload(event) {
   if (event.status === 'progress' && event.file === MODEL_FILE) {
     self.postMessage({ progress: { done: event.loaded, total: event.total } });
+  } else if (event.status === 'done' && event.file === MODEL_FILE) {
+    self.postMessage({ progress: { stage: 'preparing' } });
   }
 }
 
-async function tryDevice(device) {
+async function createEngine(device) {
   const tts = await KokoroTTS.from_pretrained(REPO, { dtype: 'fp32', device, progress_callback: reportDownload });
+  self.postMessage({ progress: { stage: 'testing' } });
   const { audio } = await tts.generate(TEST_LINE, { voice: TEST_VOICE });
   if (!isSpeech(audio)) throw new Error(`${device} produced invalid audio`);
   return tts;
 }
 
-async function createEngine() {
-  const adapter = await navigator.gpu?.requestAdapter().catch(() => null);
-  if (adapter) {
-    try {
-      return await tryDevice('webgpu');
-    } catch (err) {
-      console.warn('GPU voice unavailable, using CPU', err);
-    }
-  }
-  return tryDevice('wasm');
-}
-
-function loadEngine() {
-  engine ??= createEngine().catch((err) => {
+function loadEngine(device) {
+  engine ??= createEngine(device).catch((err) => {
     engine = null;
     throw err;
   });
@@ -50,8 +41,8 @@ function loadEngine() {
 }
 
 const tasks = {
-  async load() {
-    await loadEngine();
+  async load({ device }) {
+    await loadEngine(device);
   },
   async voices() {
     const tts = await loadEngine();

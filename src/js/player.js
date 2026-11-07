@@ -112,6 +112,7 @@ export class Player {
 
   renderInstall({ bytes, downloading, systemVoices, crashed }) {
     const web = window.folio.platform === 'web';
+    this.deviceVoicesAvailable = systemVoices;
     const message = crashed
       ? 'The natural voice did not finish loading last time, possibly because this device ran short of memory. You can try again or use the voices built into this device.'
       : `Folio needs to download its voice engine once. After that, everything runs on this ${web ? 'device' : 'PC'}, with no internet and nothing sent anywhere.`;
@@ -127,12 +128,23 @@ export class Player {
     if (downloading) this.showProgress({ done: 0, total: bytes });
   }
 
-  showProgress({ done, total }) {
+  showProgress({ done, total, stage }) {
     const slot = $('install-actions');
     if (!slot) return;
     const bar = el('div', { class: 'install-bar' }, el('i', {}));
-    bar.firstChild.style.width = `${(done / total) * 100}%`;
-    slot.replaceChildren(bar, el('span', { class: 'install-count' }, `${megabytes(done)} of ${megabytes(total)}`));
+    const message = stage === 'preparing' ? 'Loading the voice. This can take a few minutes the first time.'
+      : stage === 'testing' ? 'Testing the voice…'
+        : `${megabytes(done)} of ${megabytes(total)}`;
+    bar.firstChild.style.width = stage ? '100%' : `${(done / total) * 100}%`;
+    const escape = this.deviceVoicesAvailable
+      ? el('button', { class: 'btn', onclick: () => this.abandonInstall() }, 'Use device voices instead')
+      : null;
+    slot.replaceChildren(bar, el('span', { class: 'install-count' }, message), escape ?? '');
+  }
+
+  async abandonInstall() {
+    await window.folio.tts.stop?.();
+    await this.useDeviceVoices();
   }
 
   async install() {
@@ -142,7 +154,9 @@ export class Player {
       this.voices = null;
       if (this.open) await this.begin();
     } catch (err) {
-      toast(`${err.message}. Your download will resume when you try again.`, { error: true });
+      if (err.message === 'stopped') return;
+      const web = window.folio.platform === 'web';
+      toast(web ? `${err.message}. You can use this device's voices instead.` : `${err.message}. Your download will resume when you try again.`, { error: true });
       if (this.open) this.renderInstall(await window.folio.tts.status());
     }
   }
@@ -153,7 +167,8 @@ export class Player {
       this.voices ??= await window.folio.tts.voices();
     } catch (err) {
       toast(`The voice engine could not start: ${err.message}`, { error: true });
-      this.close();
+      if (window.folio.platform === 'web') this.renderInstall(await window.folio.tts.status());
+      else this.close();
       return;
     }
     if (!this.open) return;
@@ -164,6 +179,10 @@ export class Player {
     }
     this.createNarrator();
     this.renderControls();
+    const { slow } = await window.folio.tts.status();
+    if (slow && !this.narrator.usesSystemVoice) {
+      toast('This device makes the natural voice slowly, so expect pauses. Device voices play without them.');
+    }
     await this.playFromPage();
   }
 
@@ -183,6 +202,7 @@ export class Player {
 
   bindMediaKeys() {
     const { mediaSession } = navigator;
+    if (!mediaSession) return;
     const cover = this.info.cover ? [{ src: coverUrl(this.info) }] : [];
     mediaSession.metadata = new MediaMetadata({ title: this.info.title, artist: this.info.author, artwork: cover });
     mediaSession.setActionHandler('play', () => this.togglePlay());
@@ -270,7 +290,7 @@ export class Player {
     $('p-voice').textContent = voice?.name ?? this.narrator.voice;
     $('p-follow').hidden = this.following;
     $('p-status').textContent = this.waiting && playing ? 'Preparing the next sentence…' : '';
-    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+    if (navigator.mediaSession) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   }
 
   setRate(rate) {

@@ -10,6 +10,11 @@ const LIBRARY_KEY = 'library';
 const MODEL_BYTES = 325532232;
 const READY_FLAG = 'folio.voice.ready';
 const LOADING_FLAG = 'folio.voice.loading';
+const DEVICE_KEY = 'folio.voice.device';
+const SLOW_KEY = 'folio.voice.slow';
+const ISOLATION_RELOAD = 'folio.isolation.reload';
+// How long loading may go with no sign of progress before it counts as stuck.
+const STALL_LIMIT_MS = 240000;
 const VOICE_LIST_WAIT_MS = 1200;
 const MAX_OPEN_BOOKS = 2;
 const PATCHABLE = new Set(['progress', 'bookmarks', 'highlights', 'collections', 'lastOpened', 'pageCount']);
@@ -158,6 +163,7 @@ let nextId = 1;
 const pending = new Map();
 const progressHandlers = [];
 let downloading = false;
+let watchdog = null;
 
 function failPending(message) {
   for (const job of pending.values()) job.reject(new Error(message));
@@ -170,6 +176,7 @@ function ensureWorker() {
   worker = new Worker(new URL('voice-worker.js', SCRIPT_URL), { type: 'module' });
   worker.onmessage = ({ data: message }) => {
     if (message.progress) {
+      watchdog?.();
       progressHandlers.forEach((fn) => fn(message.progress));
       return;
     }
@@ -190,6 +197,12 @@ function call(task, payload) {
     pending.set(id, { resolve, reject });
     ensureWorker().postMessage({ id, task, payload });
   });
+}
+
+/** Stops the engine outright. A worker stuck inside the GPU can't be asked nicely. */
+function stopWorker(reason) {
+  worker?.terminate();
+  failPending(reason);
 }
 
 const flag = {
@@ -218,12 +231,55 @@ async function systemVoices() {
   }));
 }
 
+const stored = {
+  get: (key) => { try { return localStorage.getItem(key); } catch { return null; } },
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch { /* Only a convenience. */ } },
+};
+
+// Reported on Apple devices: Kokoro's GPU path exhausts Safari's per-page memory
+// limit, so the page hangs or reloads right after the download finishes, while the
+// same model loads with the GPU path off. Chrome here can't reproduce this.
+const isSafariEngine = () => /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg/.test(navigator.userAgent);
+
+async function chooseDevice() {
+  const saved = stored.get(DEVICE_KEY);
+  if (saved) return saved;
+  if (isSafariEngine()) return 'wasm';
+  return (await navigator.gpu?.requestAdapter().catch(() => null)) ? 'webgpu' : 'wasm';
+}
+
+function loadOn(device) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const arm = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => stopWorker('The natural voice took too long to start on this device'), STALL_LIMIT_MS);
+    };
+    watchdog = arm;
+    arm();
+    call('load', { device }).then(resolve, reject).finally(() => {
+      clearTimeout(timer);
+      watchdog = null;
+    });
+  });
+}
+
 /** Loads the model, recording the attempt: a tab killed for memory can't report it. */
 async function loadEngine() {
+  const device = await chooseDevice();
   flag.set(LOADING_FLAG, true);
   try {
-    await call('load');
+    await loadOn(device);
     flag.set(READY_FLAG, true);
+    // One core managed under half of real time in testing; four managed about 1.7x.
+    stored.set(SLOW_KEY, device === 'wasm' && !crossOriginIsolated ? '1' : '');
+  } catch (err) {
+    if (device === 'webgpu') {
+      stored.set(DEVICE_KEY, 'wasm');
+      return loadEngine();
+    }
+    flag.set(READY_FLAG, false);
+    throw err;
   } finally {
     flag.set(LOADING_FLAG, false);
   }
@@ -277,6 +333,7 @@ window.folio = {
       bytes: MODEL_BYTES,
       crashed: flag.get(LOADING_FLAG),
       systemVoices: (await systemVoices()).length > 0,
+      slow: Boolean(stored.get(SLOW_KEY)),
     }),
     install: async () => {
       downloading = true;
@@ -294,6 +351,10 @@ window.folio = {
     },
     synth: (text, voice) => call('synth', { text, voice }),
     cancel: async () => { worker?.postMessage({ task: 'cancel' }); },
+    stop: async () => {
+      stopWorker('stopped');
+      flag.set(LOADING_FLAG, false);
+    },
     onProgress: (fn) => progressHandlers.push(fn),
   },
   pathForFile: (file) => file,
@@ -310,4 +371,13 @@ window.folio = {
 document.documentElement.classList.add('web');
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register(new URL('../sw.js', SCRIPT_URL)).catch((err) => console.warn('Offline support unavailable', err));
+  // The multi-core headers only apply to pages the service worker served, so the
+  // first ever visit reloads itself once when the worker takes over.
+  navigator.serviceWorker.ready.then(() => {
+    const tried = sessionStorage.getItem(ISOLATION_RELOAD);
+    if (crossOriginIsolated || tried) return;
+    sessionStorage.setItem(ISOLATION_RELOAD, '1');
+    if (navigator.serviceWorker.controller) location.reload();
+    else navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+  });
 }
